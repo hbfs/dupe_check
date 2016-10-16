@@ -3,9 +3,11 @@ package main
 import (
 	"crypto/md5"
 	//	"flag"
+	"flag"
 	"fmt"
-	//"io"
-	"io/ioutil"
+	"io"
+	"runtime/pprof"
+	//"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -73,26 +75,30 @@ func ComputeHash(path string, info os.FileInfo, queue chan ReduceQueue, wg *sync
 
 	defer file.Close()
 
-	/*
-		// 200% CPU, ~30 MB ram,
-		// 3.35s user 105.20s system 213% cpu 50.848 total
-		hash := md5.New()
+	// 200% CPU, ~30 MB ram,
+	// 3.35s user 105.20s system 213% cpu 50.848 total
+	hash := md5.New()
 
-		if _, err := io.Copy(hash, file); err != nil {
-			fmt.Println(err)
-		}
+	//buf := make([]byte, 65536)
 
-		var md5sum [md5.Size]byte
-		copy(md5sum[:], hash.Sum(nil)[:16])
-	*/
-
-	//Large memory usage
-	data, err := ioutil.ReadFile(path)
-	if err != nil {
+	if _, err := io.Copy(hash, file); err != nil {
+		//if _, err := io.CopyBuffer(hash, file, buf); err != nil {
 		fmt.Println(err)
 	}
 
-	md5sum := md5.Sum(data)
+	var md5sum [md5.Size]byte
+	copy(md5sum[:], hash.Sum(nil)[:16])
+
+	/*
+		//Large memory usage, ~1.52 GB
+		// 3.10s user 31.75s system 104% cpu 33.210 total
+		data, err := ioutil.ReadFile(path)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		md5sum := md5.Sum(data)
+	*/
 
 	queue <- ReduceQueue{md5sum, FilePathInfo{info, path}}
 
@@ -103,13 +109,28 @@ func CheckDir(queue chan ReduceQueue, wg *sync.WaitGroup) filepath.WalkFunc {
 	return func(path string, info os.FileInfo, err error) error {
 		if !info.IsDir() {
 			wg.Add(1)
-			go ComputeHash(path, info, queue, wg)
+			ComputeHash(path, info, queue, wg)
 		}
 		return nil
 	}
 }
 
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+
 func main() {
+
+	//runtime.GOMAXPROCS(2)
+
+	flag.Parse()
+	fmt.Println(*cpuprofile)
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			fmt.Println(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 
 	files := make(map[[md5.Size]byte][]FilePathInfo)
 
@@ -119,9 +140,10 @@ func main() {
 
 	go UpdateHashMap(q, files, &wg)
 
-	fmt.Println("dupe_check - using", runtime.NumCPU(), "threads")
+	fmt.Println("dupe_check - using", runtime.NumCPU(), "NumCPU")
+	fmt.Println("           - using", runtime.GOMAXPROCS(0), "GOMAXPROCS")
 
-	dir := os.Args[1]
+	dir := os.Args[2]
 
 	err := filepath.Walk(dir, CheckDir(q, &wg))
 	if err != nil {
