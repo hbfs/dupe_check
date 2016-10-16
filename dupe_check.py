@@ -8,15 +8,6 @@ import sys
 from collections import defaultdict
 from operator import itemgetter
 
-"""
-def compute_checksum(f):
-    h = md5.new()
-    with open(f):
-        h.update(f.read())
-
-    files[h.digest()].append(f.path)
-"""
-
 def hashfile(hfile, hasher, blocksize=65536):
     with open(hfile, 'rb') as afile:
         buf = afile.read(blocksize)
@@ -24,7 +15,6 @@ def hashfile(hfile, hasher, blocksize=65536):
             hasher.update(buf)
             buf = afile.read(blocksize)
     return hasher.hexdigest()
-# [(fname, hashfile(open(fname, 'rb'), hashlib.md5())) for fname in fnamelst]
 
 def walk(path, hashfiles):
     for root, dirs, files in os.walk(path):
